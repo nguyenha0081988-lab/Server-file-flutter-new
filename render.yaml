@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: file-exploit-server
+    name: Server-file-flutter-new
     env: node
     buildCommand: npm install
     startCommand: node server.js
