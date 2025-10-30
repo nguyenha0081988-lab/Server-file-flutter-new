@@ -17,9 +17,9 @@ const LOGS_FILE = path.join(__dirname, 'logs.json');
 
 // ☁️ Cấu hình Cloudinary
 cloudinary.config({
-  cloud_name: 'YOUR_CLOUD_NAME',
-  api_key: 'YOUR_API_KEY',
-  api_secret: 'YOUR_API_SECRET'
+  cloud_name: 'de8lh9qxq',
+  api_key: '592925679739182',
+  api_secret: 'KWxr5Ik7N4GbNnJ-iuFdUIZPaQU'
 });
 
 // 📋 Ghi log hoạt động
