@@ -24,21 +24,18 @@ cloudinary.config({
 });
 
 // ---------------------------------------------------
-// CHỨC NĂNG LÀM SẠCH TÊN FILE (SLUGIFY)
+// CHỨC NĂNG BASE64 PUBLIC ID (Đảm bảo an toàn ký tự)
 // ---------------------------------------------------
-function slugifyFileName(text) {
-    const from = "áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ";
-    const to   = "aaaaaaaaaaaaaaaaaeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyydAAAAAAAAAAAAAAAAAEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOUUUUUUUUUUYYYYYD";
-    for (let i = 0, l = from.length; i < l; i++) {
-        text = text.replace(new RegExp(from[i], "g"), to[i]);
-    }
-    return text
-        .replace(/[^a-zA-Z0-9_\s-]/g, "") 
-        .trim()
-        .replace(/[\s-]+/g, "_");
+function encodeBase64Url(text) {
+    // Mã hóa tên file không extension
+    return Buffer.from(text, 'utf8').toString('base64url');
+}
+
+function decodeBase64Url(encodedText) {
+    // Giải mã Base64url
+    return Buffer.from(encodedText, 'base64url').toString('utf8');
 }
 // ---------------------------------------------------
-
 
 // 📋 Ghi log hoạt động
 function log(username, action, file, folder) {
@@ -63,8 +60,8 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   const originalFileName = req.file.originalname;
   const baseName = path.parse(originalFileName).name;
   
-  // SỬ DỤNG HÀM LÀM SẠCH VÀ CHUYỂN THÀNH CHỮ THƯỜNG cho Public ID
-  const cleanBaseName = slugifyFileName(baseName).toLowerCase(); 
+  // TẠO PUBLIC ID BẰNG BASE64
+  const base64PublicId = encodeBase64Url(baseName); 
 
   try {
     const result = await new Promise((resolve, reject) => {
@@ -72,7 +69,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
         { 
           folder: cloudinaryFolder,
           resource_type: 'raw', 
-          public_id: cleanBaseName, // Public ID SẠCH và CHỮ THƯỜNG
+          public_id: base64PublicId, // PUBLIC ID ĐƯỢC MÃ HÓA
           filename: originalFileName
         },
         (error, result) => {
@@ -108,7 +105,8 @@ app.get('/browse', async (req, res) => {
 
     const files = searchResult.resources
       .filter(r => r.resource_type === 'raw')
-      .map(r => r.filename || path.basename(r.public_id) + path.extname(r.filename)); 
+      // Hiển thị tên file gốc (filename)
+      .map(r => r.filename || decodeBase64Url(path.basename(r.public_id)) + path.extname(r.filename)); 
 
     // Duyệt folder
     const folderResult = await cloudinary.api.sub_folders(cloudinaryPath);
@@ -125,62 +123,46 @@ app.get('/browse', async (req, res) => {
   }
 });
 
-// 📥 Tải file về (TĂNG CƯỜNG TÌM KIẾM PUBLIC ID)
+// 📥 Tải file về (SỬ DỤNG PUBLIC ID BASE64)
 app.get('/download/:fileName', async (req, res) => {
-    const { fileName } = req.params;
+    const { fileName } = req.params; // Tên file đã mã hóa
     const folder = req.query.folder || '';
     
-    // GIẢI MÃ VÀ LÀM SẠCH
-    const decodedFileName = decodeURIComponent(fileName); 
-    const fileBaseName = path.parse(decodedFileName).name; 
-    const fileExtension = path.extname(decodedFileName).substring(1); 
+    // Tách Public ID (Tên file không extension)
+    const base64PublicId = fileName.substring(0, fileName.lastIndexOf('.'));
+    const fileExtension = fileName.substring(fileName.lastIndexOf('.') + 1); 
     
-    // TÊN PUBLIC ID CHUẨN ĐÃ LÀM SẠCH VÀ CHỮ THƯỜNG
-    const cleanPublicIdBase = slugifyFileName(fileBaseName).toLowerCase();
+    // Xây dựng Public ID chuẩn
+    const publicId = [CLOUDINARY_ROOT_FOLDER, folder, base64PublicId].filter(Boolean).join('/'); 
     
-    // TÊN PUBLIC ID GỐC (Trường hợp file cũ chưa được làm sạch hoàn toàn)
-    const originalPublicIdBase = fileBaseName; 
+    try {
+        const resource = await cloudinary.api.resource(publicId, {
+            resource_type: 'raw', 
+            format: fileExtension, 
+        });
 
-    // MẢNG CÁC PUBLIC ID CẦN THỬ NGHIỆM
-    const publicIdAttempts = [
-        // 1. Tên đã làm sạch, chữ thường (Chuẩn mới)
-        [CLOUDINARY_ROOT_FOLDER, folder, cleanPublicIdBase].filter(Boolean).join('/'),
-        // 2. Tên Gốc (Không làm sạch) (Chuẩn cũ/dữ liệu legacy)
-        [CLOUDINARY_ROOT_FOLDER, folder, originalPublicIdBase].filter(Boolean).join('/'),
-    ];
-    
-    let resource = null;
-    
-    for (const publicId of publicIdAttempts) {
-        try {
-            resource = await cloudinary.api.resource(publicId, {
-                resource_type: 'raw', 
-                format: fileExtension, 
-            });
-            if (resource && resource.secure_url) {
-                break; // Tìm thấy, thoát vòng lặp
-            }
-        } catch (error) {
-             // Bỏ qua lỗi 404 và thử Public ID tiếp theo
+        if (resource && resource.secure_url) {
+            res.redirect(resource.secure_url); 
+        } else {
+            res.status(404).send('Không tìm thấy file trên Cloudinary');
         }
-    }
-
-    if (resource && resource.secure_url) {
-        res.redirect(resource.secure_url); 
-    } else {
-        console.error(`LỖI CUỐI: Không tìm thấy file sau khi thử: ${publicIdAttempts.join(' | ')}`);
-        res.status(404).send('Không tìm thấy file trên Cloudinary');
+    } catch (error) {
+        console.error('Lỗi Cloudinary (Download/API):', error);
+        if (error.http_code === 404) {
+             return res.status(404).send('File không tồn tại');
+        }
+        res.status(500).send('Lỗi máy chủ khi tải file: ' + error.message);
     }
 });
 
 // 📂 Tạo thư mục mới
-app.post('/create-folder', async (req, res) => {
+app.post('/create-folder', (req, res) => {
   const { folder, name, username } = req.body;
   const newFolderRelativePath = path.join(folder || '', name);
   const cloudinaryPath = path.join(CLOUDINARY_ROOT_FOLDER, newFolderRelativePath);
 
   try {
-    await cloudinary.api.create_folder(cloudinaryPath);
+    cloudinary.api.create_folder(cloudinaryPath);
     log(username || 'unknown', 'tạo thư mục', '', newFolderRelativePath); 
     res.sendStatus(200);
   } catch (error) {
@@ -195,8 +177,10 @@ app.post('/create-folder', async (req, res) => {
 
 // 📝 Ghi đè nội dung file (Chỉ dùng cho TXT)
 app.post('/save', async (req, res) => {
-  const { fileName, content, folder, username } = req.body;
-  const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', slugifyFileName(path.parse(fileName).name).toLowerCase());
+  const { fileName, content, folder, username } = req.body; // fileName là tên gốc
+  const baseName = path.parse(fileName).name;
+  const base64PublicId = encodeBase64Url(baseName);
+  const publicId = [CLOUDINARY_ROOT_FOLDER, folder, base64PublicId].filter(Boolean).join('/');
 
   try {
     // Xóa file cũ
@@ -208,8 +192,8 @@ app.post('/save', async (req, res) => {
         { 
           folder: path.join(CLOUDINARY_ROOT_FOLDER, folder || ''),
           resource_type: 'raw',
-          public_id: slugifyFileName(path.parse(fileName).name).toLowerCase(),
-          filename: fileName 
+          public_id: base64PublicId,
+          filename: fileName // Tên hiển thị
         },
         (error, result) => {
           if (error) reject(error);
@@ -255,14 +239,14 @@ app.get('/search', async (req, res) => {
 
 // ✏️ Đổi tên file (Rename)
 app.patch('/rename', async (req, res) => {
-  const { folder, oldName, newName, username } = req.body;
+  const { folder, oldName, newName, username } = req.body; // oldName, newName là tên gốc
   
-  // Lấy tên base đã làm sạch và chữ thường
-  const oldBaseName = slugifyFileName(path.parse(oldName).name).toLowerCase();
-  const newBaseName = slugifyFileName(path.parse(newName).name).toLowerCase();
+  // Lấy tên base đã mã hóa
+  const oldBase64Name = encodeBase64Url(path.parse(oldName).name);
+  const newBase64Name = encodeBase64Url(path.parse(newName).name);
 
-  const oldPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', oldBaseName);
-  const newPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', newBaseName);
+  const oldPublicId = [CLOUDINARY_ROOT_FOLDER, folder, oldBase64Name].filter(Boolean).join('/');
+  const newPublicId = [CLOUDINARY_ROOT_FOLDER, folder, newBase64Name].filter(Boolean).join('/');
   
   try {
     await cloudinary.uploader.rename(oldPublicId, newPublicId, {
@@ -281,9 +265,9 @@ app.patch('/rename', async (req, res) => {
 
 // 🗑️ Xóa file
 app.post('/delete', async (req, res) => {
-  const { folder, fileName, username } = req.body;
-  const baseName = slugifyFileName(path.parse(fileName).name).toLowerCase();
-  const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', baseName);
+  const { folder, fileName, username } = req.body; // fileName là tên gốc
+  const base64PublicId = encodeBase64Url(path.parse(fileName).name);
+  const publicId = [CLOUDINARY_ROOT_FOLDER, folder, base64PublicId].filter(Boolean).join('/');
 
   try {
     await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
@@ -295,6 +279,22 @@ app.post('/delete', async (req, res) => {
     res.status(500).send('Xóa file thất bại');
   }
 });
+
+// 🗑️ Xóa thư mục
+app.post('/delete-folder', async (req, res) => {
+    const { folder, folderName, username } = req.body;
+    const fullPath = [CLOUDINARY_ROOT_FOLDER, folder, folderName].filter(Boolean).join('/');
+    
+    try {
+        await cloudinary.api.delete_folder(fullPath);
+        log(username || 'unknown', 'xóa thư mục', '', fullPath);
+        res.sendStatus(200);
+    } catch (error) {
+        console.error('Lỗi Cloudinary (Delete Folder):', error);
+        res.status(500).send('Xóa thư mục thất bại: ' + error.message);
+    }
+});
+
 
 // --- ENDPOINT LOG VÀ USER ---
 
