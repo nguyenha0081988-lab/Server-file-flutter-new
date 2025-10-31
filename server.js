@@ -33,8 +33,8 @@ function slugifyFileName(text) {
         text = text.replace(new RegExp(from[i], "g"), to[i]);
     }
     // Loại bỏ ký tự không an toàn và thay thế khoảng trắng bằng _
-    return text.toLowerCase()
-        .replace(/[^a-z0-9_\s-]/g, "") 
+    return text
+        .replace(/[^a-zA-Z0-9_\s-]/g, "") 
         .trim()
         .replace(/[\s-]+/g, "_");
 }
@@ -64,8 +64,8 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   const originalFileName = req.file.originalname;
   const baseName = path.parse(originalFileName).name;
   
-  // SỬ DỤNG HÀM LÀM SẠCH CHO PUBLIC ID
-  const cleanBaseName = slugifyFileName(baseName);
+  // SỬ DỤNG HÀM LÀM SẠCH VÀ CHUYỂN THÀNH CHỮ THƯỜNG cho Public ID
+  const cleanBaseName = slugifyFileName(baseName).toLowerCase(); 
 
   try {
     const result = await new Promise((resolve, reject) => {
@@ -73,7 +73,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
         { 
           folder: cloudinaryFolder,
           resource_type: 'raw', 
-          public_id: cleanBaseName, // Public ID SẠCH
+          public_id: cleanBaseName, // Public ID SẠCH và CHỮ THƯỜNG
           filename: originalFileName
         },
         (error, result) => {
@@ -131,14 +131,15 @@ app.get('/download/:fileName', async (req, res) => {
     const { fileName } = req.params;
     const folder = req.query.folder || '';
     
-    // GIẢI MÃ URL TRƯỚC (QUAN TRỌNG VỚI TÊN FILE CÓ KÝ TỰ ĐẶC BIỆT)
+    // GIẢI MÃ VÀ LÀM SẠCH
     const decodedFileName = decodeURIComponent(fileName); 
     const fileBaseName = path.parse(decodedFileName).name; 
     const fileExtension = path.extname(decodedFileName).substring(1); 
     
-    // SỬ DỤNG HÀM LÀM SẠCH ĐỂ TÌM KIẾM PUBLIC ID
-    const cleanFileBaseName = slugifyFileName(fileBaseName);
+    // SỬ DỤNG HÀM LÀM SẠCH VÀ CHUYỂN THÀNH CHỮ THƯỜNG ĐỂ TÌM KIẾM
+    const cleanFileBaseName = slugifyFileName(fileBaseName).toLowerCase();
 
+    // Xây dựng Public ID chuẩn
     let publicIdParts = [CLOUDINARY_ROOT_FOLDER];
     if (folder) {
         publicIdParts.push(folder);
@@ -252,8 +253,8 @@ app.patch('/rename', async (req, res) => {
   const { folder, oldName, newName, username } = req.body;
   
   // Lấy tên base đã làm sạch
-  const oldBaseName = slugifyFileName(path.parse(oldName).name);
-  const newBaseName = slugifyFileName(path.parse(newName).name);
+  const oldBaseName = slugifyFileName(path.parse(oldName).name).toLowerCase();
+  const newBaseName = slugifyFileName(path.parse(newName).name).toLowerCase();
 
   const oldPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', oldBaseName);
   const newPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', newBaseName);
@@ -276,7 +277,7 @@ app.patch('/rename', async (req, res) => {
 // 🗑️ Xóa file
 app.post('/delete', async (req, res) => {
   const { folder, fileName, username } = req.body;
-  const baseName = slugifyFileName(path.parse(fileName).name);
+  const baseName = slugifyFileName(path.parse(fileName).name).toLowerCase();
   const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', baseName);
 
   try {
