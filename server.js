@@ -16,7 +16,7 @@ const USERS_FILE = path.join(__dirname, 'users.json');
 const LOGS_FILE = path.join(__dirname, 'logs.json');
 const CLOUDINARY_ROOT_FOLDER = 'file_copilot_app_files'; // Thư mục gốc cố định
 
-// ☁️ Cấu hình Cloudinary (Dùng cấu hình bạn đã cung cấp)
+// ☁️ Cấu hình Cloudinary
 cloudinary.config({
   cloud_name: 'de8lh9qxq',
   api_key: '592925679739182',
@@ -27,7 +27,7 @@ cloudinary.config({
 // CHỨC NĂNG LÀM SẠCH TÊN FILE (SLUGIFY)
 // ---------------------------------------------------
 function slugifyFileName(text) {
-    const from = "áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ";
+    const from = "áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ";
     const to   = "aaaaaaaaaaaaaaaaaeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyydAAAAAAAAAAAAAAAAAEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOUUUUUUUUUUYYYYYD";
     for (let i = 0, l = from.length; i < l; i++) {
         text = text.replace(new RegExp(from[i], "g"), to[i]);
@@ -39,7 +39,6 @@ function slugifyFileName(text) {
         .replace(/[\s-]+/g, "_");
 }
 // ---------------------------------------------------
-
 
 // 📋 Ghi log hoạt động
 function log(username, action, file, folder) {
@@ -126,12 +125,12 @@ app.get('/browse', async (req, res) => {
   }
 });
 
-// 📥 Tải file về (ĐÃ SỬA LỖI 500 KHI MỞ FILE)
+// 📥 Tải file về (ĐÃ SỬA LỖI TÊN FILE)
 app.get('/download/:fileName', async (req, res) => {
     const { fileName } = req.params;
     const folder = req.query.folder || '';
     
-    // GIẢI MÃ VÀ LÀM SẠCH
+    // GIẢI MÃ URL
     const decodedFileName = decodeURIComponent(fileName); 
     const fileBaseName = path.parse(decodedFileName).name; 
     const fileExtension = path.extname(decodedFileName).substring(1); 
@@ -191,7 +190,7 @@ app.post('/create-folder', async (req, res) => {
 // 📝 Ghi đè nội dung file (Chỉ dùng cho TXT)
 app.post('/save', async (req, res) => {
   const { fileName, content, folder, username } = req.body;
-  const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', path.parse(fileName).name);
+  const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', slugifyFileName(path.parse(fileName).name).toLowerCase());
 
   try {
     // Xóa file cũ
@@ -203,8 +202,8 @@ app.post('/save', async (req, res) => {
         { 
           folder: path.join(CLOUDINARY_ROOT_FOLDER, folder || ''),
           resource_type: 'raw',
-          public_id: path.parse(fileName).name,
-          filename: fileName 
+          public_id: slugifyFileName(path.parse(fileName).name).toLowerCase(),
+          filename: fileName // Tên hiển thị
         },
         (error, result) => {
           if (error) reject(error);
@@ -252,7 +251,7 @@ app.get('/search', async (req, res) => {
 app.patch('/rename', async (req, res) => {
   const { folder, oldName, newName, username } = req.body;
   
-  // Lấy tên base đã làm sạch
+  // Lấy tên base đã làm sạch và chữ thường
   const oldBaseName = slugifyFileName(path.parse(oldName).name).toLowerCase();
   const newBaseName = slugifyFileName(path.parse(newName).name).toLowerCase();
 
