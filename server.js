@@ -17,7 +17,6 @@ const LOGS_FILE = path.join(__dirname, 'logs.json');
 const CLOUDINARY_ROOT_FOLDER = 'file_copilot_app_files'; // Thư mục gốc cố định
 
 // ☁️ Cấu hình Cloudinary (Dùng cấu hình bạn đã cung cấp)
-// LƯU Ý: Trong môi trường production (Render), nên sử dụng process.env.xxx
 cloudinary.config({
   cloud_name: 'de8lh9qxq',
   api_key: '592925679739182',
@@ -34,7 +33,6 @@ function log(username, action, file, folder) {
     file,
     folder
   });
-  // Ghi logs đồng bộ (có thể cải tiến thành bất đồng bộ trong production)
   fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2));
 }
 
@@ -44,7 +42,6 @@ const upload = multer();
 app.post('/upload', upload.single('file'), async (req, res) => {
   const folder = req.body.folder || '';
   const username = req.body.username || 'unknown';
-  // Chuẩn hóa path cho Cloudinary
   const cloudinaryFolder = path.join(CLOUDINARY_ROOT_FOLDER, folder);
   const originalFileName = req.file.originalname;
   const baseName = path.parse(originalFileName).name;
@@ -117,7 +114,10 @@ app.get('/download/:fileName', async (req, res) => {
     const fileExtension = path.extname(fileName).substring(1); 
     
     // Tạo Public ID đầy đủ
-    const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', fileBaseName); 
+    const rawPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', fileBaseName); 
+    
+    // BƯỚC SỬA LỖI QUAN TRỌNG: Chuẩn hóa Public ID cho Cloudinary
+    const publicId = rawPublicId.replace(/\\/g, '/').replace(/^\//, '').replace(/\/$/, '');
     
     try {
         // Cần truyền resource_type: 'raw' và format để Cloudinary xử lý đúng
@@ -133,6 +133,9 @@ app.get('/download/:fileName', async (req, res) => {
         }
     } catch (error) {
         console.error('Lỗi Cloudinary (Download):', error);
+        if (error.http_code === 404) {
+             return res.status(404).send('File không tồn tại: ' + fileName);
+        }
         res.status(500).send('Lỗi máy chủ khi tải file: ' + error.message);
     }
 });
@@ -163,9 +166,10 @@ app.post('/save', async (req, res) => {
   const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', path.parse(fileName).name);
 
   try {
-    // Xóa file cũ và upload nội dung mới
+    // Xóa file cũ
     await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
     
+    // Upload nội dung mới
     await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         { 
