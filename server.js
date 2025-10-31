@@ -32,13 +32,13 @@ function slugifyFileName(text) {
     for (let i = 0, l = from.length; i < l; i++) {
         text = text.replace(new RegExp(from[i], "g"), to[i]);
     }
-    // Loại bỏ ký tự không an toàn và thay thế khoảng trắng bằng _
     return text
         .replace(/[^a-zA-Z0-9_\s-]/g, "") 
         .trim()
         .replace(/[\s-]+/g, "_");
 }
 // ---------------------------------------------------
+
 
 // 📋 Ghi log hoạt động
 function log(username, action, file, folder) {
@@ -125,45 +125,51 @@ app.get('/browse', async (req, res) => {
   }
 });
 
-// 📥 Tải file về (ĐÃ SỬA LỖI TÊN FILE)
+// 📥 Tải file về (TĂNG CƯỜNG TÌM KIẾM PUBLIC ID)
 app.get('/download/:fileName', async (req, res) => {
     const { fileName } = req.params;
     const folder = req.query.folder || '';
     
-    // GIẢI MÃ URL
+    // GIẢI MÃ VÀ LÀM SẠCH
     const decodedFileName = decodeURIComponent(fileName); 
     const fileBaseName = path.parse(decodedFileName).name; 
     const fileExtension = path.extname(decodedFileName).substring(1); 
     
-    // SỬ DỤNG HÀM LÀM SẠCH VÀ CHUYỂN THÀNH CHỮ THƯỜNG ĐỂ TÌM KIẾM
-    const cleanFileBaseName = slugifyFileName(fileBaseName).toLowerCase();
+    // TÊN PUBLIC ID CHUẨN ĐÃ LÀM SẠCH VÀ CHỮ THƯỜNG
+    const cleanPublicIdBase = slugifyFileName(fileBaseName).toLowerCase();
+    
+    // TÊN PUBLIC ID GỐC (Trường hợp file cũ chưa được làm sạch hoàn toàn)
+    const originalPublicIdBase = fileBaseName; 
 
-    // Xây dựng Public ID chuẩn
-    let publicIdParts = [CLOUDINARY_ROOT_FOLDER];
-    if (folder) {
-        publicIdParts.push(folder);
+    // MẢNG CÁC PUBLIC ID CẦN THỬ NGHIỆM
+    const publicIdAttempts = [
+        // 1. Tên đã làm sạch, chữ thường (Chuẩn mới)
+        [CLOUDINARY_ROOT_FOLDER, folder, cleanPublicIdBase].filter(Boolean).join('/'),
+        // 2. Tên Gốc (Không làm sạch) (Chuẩn cũ/dữ liệu legacy)
+        [CLOUDINARY_ROOT_FOLDER, folder, originalPublicIdBase].filter(Boolean).join('/'),
+    ];
+    
+    let resource = null;
+    
+    for (const publicId of publicIdAttempts) {
+        try {
+            resource = await cloudinary.api.resource(publicId, {
+                resource_type: 'raw', 
+                format: fileExtension, 
+            });
+            if (resource && resource.secure_url) {
+                break; // Tìm thấy, thoát vòng lặp
+            }
+        } catch (error) {
+             // Bỏ qua lỗi 404 và thử Public ID tiếp theo
+        }
     }
-    publicIdParts.push(cleanFileBaseName);
-    
-    const publicId = publicIdParts.join('/'); 
-    
-    try {
-        const resource = await cloudinary.api.resource(publicId, {
-            resource_type: 'raw', 
-            format: fileExtension, 
-        });
 
-        if (resource && resource.secure_url) {
-            res.redirect(resource.secure_url); // Chuyển hướng
-        } else {
-            res.status(404).send('Không tìm thấy file trên Cloudinary');
-        }
-    } catch (error) {
-        console.error('Lỗi Cloudinary (Download/API):', error);
-        if (error.http_code === 404) {
-             return res.status(404).send('File không tồn tại: ' + fileName);
-        }
-        res.status(500).send('Lỗi máy chủ khi tải file: ' + error.message);
+    if (resource && resource.secure_url) {
+        res.redirect(resource.secure_url); 
+    } else {
+        console.error(`LỖI CUỐI: Không tìm thấy file sau khi thử: ${publicIdAttempts.join(' | ')}`);
+        res.status(404).send('Không tìm thấy file trên Cloudinary');
     }
 });
 
@@ -203,7 +209,7 @@ app.post('/save', async (req, res) => {
           folder: path.join(CLOUDINARY_ROOT_FOLDER, folder || ''),
           resource_type: 'raw',
           public_id: slugifyFileName(path.parse(fileName).name).toLowerCase(),
-          filename: fileName // Tên hiển thị
+          filename: fileName 
         },
         (error, result) => {
           if (error) reject(error);
