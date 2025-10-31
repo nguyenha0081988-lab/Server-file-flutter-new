@@ -23,6 +23,24 @@ cloudinary.config({
   api_secret: 'KWxr5Ik7N4GbNnJ-iuFdUIZPaQU'
 });
 
+// ---------------------------------------------------
+// CHỨC NĂNG LÀM SẠCH TÊN FILE (SLUGIFY)
+// ---------------------------------------------------
+function slugifyFileName(text) {
+    const from = "áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ";
+    const to   = "aaaaaaaaaaaaaaaaaeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyydAAAAAAAAAAAAAAAAAEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOUUUUUUUUUUYYYYYD";
+    for (let i = 0, l = from.length; i < l; i++) {
+        text = text.replace(new RegExp(from[i], "g"), to[i]);
+    }
+    // Loại bỏ ký tự không an toàn và thay thế khoảng trắng bằng _
+    return text.toLowerCase()
+        .replace(/[^a-z0-9_\s-]/g, "") 
+        .trim()
+        .replace(/[\s-]+/g, "_");
+}
+// ---------------------------------------------------
+
+
 // 📋 Ghi log hoạt động
 function log(username, action, file, folder) {
   const logs = fs.existsSync(LOGS_FILE) ? JSON.parse(fs.readFileSync(LOGS_FILE)) : [];
@@ -45,6 +63,9 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   const cloudinaryFolder = path.join(CLOUDINARY_ROOT_FOLDER, folder);
   const originalFileName = req.file.originalname;
   const baseName = path.parse(originalFileName).name;
+  
+  // SỬ DỤNG HÀM LÀM SẠCH CHO PUBLIC ID
+  const cleanBaseName = slugifyFileName(baseName);
 
   try {
     const result = await new Promise((resolve, reject) => {
@@ -52,7 +73,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
         { 
           folder: cloudinaryFolder,
           resource_type: 'raw', 
-          public_id: baseName, 
+          public_id: cleanBaseName, // Public ID SẠCH
           filename: originalFileName
         },
         (error, result) => {
@@ -110,20 +131,23 @@ app.get('/download/:fileName', async (req, res) => {
     const { fileName } = req.params;
     const folder = req.query.folder || '';
     
-    const fileBaseName = path.parse(fileName).name; 
-    const fileExtension = path.extname(fileName).substring(1); 
+    // GIẢI MÃ URL TRƯỚC (QUAN TRỌNG VỚI TÊN FILE CÓ KÝ TỰ ĐẶC BIỆT)
+    const decodedFileName = decodeURIComponent(fileName); 
+    const fileBaseName = path.parse(decodedFileName).name; 
+    const fileExtension = path.extname(decodedFileName).substring(1); 
     
-    // TẠO PUBLIC ID CHUẨN XÁC:
+    // SỬ DỤNG HÀM LÀM SẠCH ĐỂ TÌM KIẾM PUBLIC ID
+    const cleanFileBaseName = slugifyFileName(fileBaseName);
+
     let publicIdParts = [CLOUDINARY_ROOT_FOLDER];
     if (folder) {
         publicIdParts.push(folder);
     }
-    publicIdParts.push(fileBaseName);
+    publicIdParts.push(cleanFileBaseName);
     
     const publicId = publicIdParts.join('/'); 
     
     try {
-        // Cần truyền resource_type: 'raw' và format để Cloudinary xử lý đúng
         const resource = await cloudinary.api.resource(publicId, {
             resource_type: 'raw', 
             format: fileExtension, 
@@ -226,8 +250,13 @@ app.get('/search', async (req, res) => {
 // ✏️ Đổi tên file (Rename)
 app.patch('/rename', async (req, res) => {
   const { folder, oldName, newName, username } = req.body;
-  const oldPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', path.parse(oldName).name);
-  const newPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', path.parse(newName).name);
+  
+  // Lấy tên base đã làm sạch
+  const oldBaseName = slugifyFileName(path.parse(oldName).name);
+  const newBaseName = slugifyFileName(path.parse(newName).name);
+
+  const oldPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', oldBaseName);
+  const newPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', newBaseName);
   
   try {
     await cloudinary.uploader.rename(oldPublicId, newPublicId, {
@@ -247,7 +276,8 @@ app.patch('/rename', async (req, res) => {
 // 🗑️ Xóa file
 app.post('/delete', async (req, res) => {
   const { folder, fileName, username } = req.body;
-  const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', path.parse(fileName).name);
+  const baseName = slugifyFileName(path.parse(fileName).name);
+  const publicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', baseName);
 
   try {
     await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
