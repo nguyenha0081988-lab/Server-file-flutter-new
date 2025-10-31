@@ -51,8 +51,8 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         { 
           folder: cloudinaryFolder,
-          resource_type: 'raw', // Rất quan trọng cho các file như docx, xlsx
-          public_id: baseName, // Đặt tên file không extension làm public_id
+          resource_type: 'raw', 
+          public_id: baseName, 
           filename: originalFileName
         },
         (error, result) => {
@@ -113,11 +113,14 @@ app.get('/download/:fileName', async (req, res) => {
     const fileBaseName = path.parse(fileName).name; 
     const fileExtension = path.extname(fileName).substring(1); 
     
-    // Tạo Public ID đầy đủ
-    const rawPublicId = path.join(CLOUDINARY_ROOT_FOLDER, folder || '', fileBaseName); 
+    // TẠO PUBLIC ID CHUẨN XÁC:
+    let publicIdParts = [CLOUDINARY_ROOT_FOLDER];
+    if (folder) {
+        publicIdParts.push(folder);
+    }
+    publicIdParts.push(fileBaseName);
     
-    // BƯỚC SỬA LỖI QUAN TRỌNG: Chuẩn hóa Public ID cho Cloudinary
-    const publicId = rawPublicId.replace(/\\/g, '/').replace(/^\//, '').replace(/\/$/, '');
+    const publicId = publicIdParts.join('/'); 
     
     try {
         // Cần truyền resource_type: 'raw' và format để Cloudinary xử lý đúng
@@ -132,7 +135,7 @@ app.get('/download/:fileName', async (req, res) => {
             res.status(404).send('Không tìm thấy file trên Cloudinary');
         }
     } catch (error) {
-        console.error('Lỗi Cloudinary (Download):', error);
+        console.error('Lỗi Cloudinary (Download/API):', error);
         if (error.http_code === 404) {
              return res.status(404).send('File không tồn tại: ' + fileName);
         }
