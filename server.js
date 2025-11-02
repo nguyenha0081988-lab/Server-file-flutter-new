@@ -123,14 +123,15 @@ app.get('/browse', async (req, res) => {
   }
 });
 
-// 📥 Tải file về (SỬ DỤNG PUBLIC ID BASE64)
+// 📥 Tải file về (SỬA LỖI 500 BASE64)
 app.get('/download/:fileName', async (req, res) => {
-    const { fileName } = req.params; // Tên file đã mã hóa
+    // SỬ DỤNG decodeURIComponent để xử lý an toàn
+    const decodedFileNameParam = decodeURIComponent(req.params.fileName); 
     const folder = req.query.folder || '';
     
     // Tách Public ID (Tên file không extension)
-    const base64PublicId = fileName.substring(0, fileName.lastIndexOf('.'));
-    const fileExtension = fileName.substring(fileName.lastIndexOf('.') + 1); 
+    const base64PublicId = decodedFileNameParam.substring(0, decodedFileNameParam.lastIndexOf('.'));
+    const fileExtension = decodedFileNameParam.substring(decodedFileNameParam.lastIndexOf('.') + 1); 
     
     // Xây dựng Public ID chuẩn
     const publicId = [CLOUDINARY_ROOT_FOLDER, folder, base64PublicId].filter(Boolean).join('/'); 
@@ -147,11 +148,12 @@ app.get('/download/:fileName', async (req, res) => {
             res.status(404).send('Không tìm thấy file trên Cloudinary');
         }
     } catch (error) {
-        console.error('Lỗi Cloudinary (Download/API):', error);
+        console.error('LỖI SERVER KHÔNG THỂ XỬ LÝ DOWNLOAD (500):', error);
         if (error.http_code === 404) {
              return res.status(404).send('File không tồn tại');
         }
-        res.status(500).send('Lỗi máy chủ khi tải file: ' + error.message);
+        // Trả về 500 khi có lỗi trong quá trình xử lý Base64/API
+        res.status(500).send('Lỗi máy chủ khi tải file: ' + error.message); 
     }
 });
 
